@@ -2,6 +2,8 @@
 
 一只可以按压、拖拽、松手回弹的奶白色小猫。给自己一点软乎乎的休息时间。
 
+**[在线试玩](https://milk-meow-open.vercel.app/)**
+
 ![猫咪奶冻桌面预览](docs/preview.png)
 
 这是月鹿猫咪布丁设计的**独立重写版**，使用 Three.js / WebGL 2、参数化模型和阻尼弹簧形变。无需模型文件、API 密钥、后端或 WebGPU。
