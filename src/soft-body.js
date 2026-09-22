@@ -1,6 +1,6 @@
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const safe = value => Number.isFinite(value) ? value : 0;
-const DT = 1 / 120;
+const DT = 1 / 180;
 const DIMS = [7, 6, 5];
 const LOW = [-1.55, 0, -1];
 const HIGH = [1.55, 2.35, 1];
@@ -160,12 +160,28 @@ export class SoftBody {
   _substep(firmness, damping) {
     const p = this.positions, v = this.velocities;
     this.previous.set(p);
-    const drag = Math.exp(-(1.2 + damping * 9) * DT);
+    this._dampInternal(damping);
+    const drag = Math.exp(-0.025 * DT);
+    // A soft desk boundary acts on the center of mass, never individual rest poses.
+    let centerX = 0, centerZ = 0, velocityX = 0, velocityZ = 0;
+    const count = p.length / 3;
+    for (let i = 0; i < p.length; i += 3) {
+      centerX += p[i] / count; centerZ += p[i + 2] / count;
+      velocityX += v[i] / count; velocityZ += v[i + 2] / count;
+    }
+    const radius = Math.hypot(centerX, centerZ);
+    let boundaryX = 0, boundaryZ = 0;
+    if (radius > 0.65) {
+      const outwardSpeed = Math.max(0, (centerX * velocityX + centerZ * velocityZ) / radius);
+      const force = (radius - 0.65) * 12 + outwardSpeed * 3;
+      boundaryX = -centerX / radius * force;
+      boundaryZ = -centerZ / radius * force;
+    }
     for (let i = 0; i < p.length; i += 3) {
       for (let axis = 0; axis < 3; axis++) {
         const k = i + axis;
-        // Gentle recovery keeps the desk toy near its initial resting placement.
-        const acceleration = (this.rest[k] - p[k]) * 0.8 - (axis === 1 ? 0.65 : 0);
+        // No rest-position tether: elastic constraints alone recover the shape.
+        const acceleration = axis === 1 ? -4.8 : axis === 0 ? boundaryX : boundaryZ;
         v[k] = clamp((v[k] + acceleration * DT) * drag, -8, 8);
         p[k] += v[k] * DT;
       }
@@ -180,7 +196,7 @@ export class SoftBody {
     }
     const edgeAlpha = (0.0004 * (1 - firmness) + 0.000001) / (DT * DT);
     const volumeAlpha = 0.00000002 / (DT * DT);
-    for (let iteration = 0; iteration < 10; iteration++) {
+    for (let iteration = 0; iteration < 5; iteration++) {
       this._solveGrab();
       for (const edge of this.edges) {
         const { i, j } = edge;
@@ -202,8 +218,38 @@ export class SoftBody {
       for (let axis = 0; axis < 3; axis++) {
         const k = i + axis;
         v[k] = clamp((p[k] - this.previous[k]) / DT, -5, 5);
-        if (onFloor && axis !== 1) v[k] *= 0.7;
+        if (onFloor && axis !== 1) v[k] *= Math.exp(-5 * DT);
         if (onFloor && axis === 1) v[k] = Math.max(0, v[k]);
+      }
+    }
+  }
+
+  // Equal and opposite axial impulses damp strain, not shared translation.
+  _dampInternal(damping) {
+    const amount = 0.5 * (1 - Math.exp(-(0.04 + 24 * damping * damping) * DT));
+    const p = this.positions, v = this.velocities;
+    for (const { i, j } of this.edges) {
+      const dx = p[i] - p[j], dy = p[i + 1] - p[j + 1], dz = p[i + 2] - p[j + 2];
+      const lengthSquared = dx * dx + dy * dy + dz * dz;
+      if (lengthSquared < 1e-12) continue;
+      const relative = ((v[i] - v[j]) * dx + (v[i + 1] - v[j + 1]) * dy + (v[i + 2] - v[j + 2]) * dz) / lengthSquared;
+      const impulse = amount * relative;
+      v[i] -= dx * impulse; v[j] += dx * impulse;
+      v[i + 1] -= dy * impulse; v[j + 1] += dy * impulse;
+      v[i + 2] -= dz * impulse; v[j + 2] += dz * impulse;
+    }
+  }
+
+  tap(point = { x: 0, y: 2, z: 0 }) {
+    const center = this.read().center;
+    const contact = [safe(point.x), safe(point.y), safe(point.z)];
+    const direction = [center.x - contact[0], center.y - contact[1], center.z - contact[2]];
+    const length = Math.hypot(...direction) || 1;
+    for (let i = 0; i < this.positions.length; i += 3) {
+      const distanceSquared = (this.positions[i] - contact[0]) ** 2 + (this.positions[i + 1] - contact[1]) ** 2 + (this.positions[i + 2] - contact[2]) ** 2;
+      const influence = Math.exp(-distanceSquared / 0.5);
+      for (let axis = 0; axis < 3; axis++) {
+        this.velocities[i + axis] += influence * (direction[axis] / length * 2.2 - (axis === 1 ? 0.35 : 0));
       }
     }
   }

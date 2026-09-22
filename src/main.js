@@ -86,7 +86,24 @@ function start() {
   scene.add(contactShadow);
   let pointer = null, autoRemaining = 0, flavor = 'milk', contextLost = false, idleLabel = false;
   let presses = 0, frameCount = 0, activeMs = 0;
-  calm.checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Motion is only user-triggered; the requested jelly preset is explicit and visible.
+  calm.checked = false;
+  function setPreset(name) {
+    const jelly = name === 'jelly';
+    firmness.value = jelly ? '.35' : '.65';
+    damping.value = jelly ? '.18' : '.85';
+    calm.checked = !jelly;
+    document.querySelectorAll('[data-preset]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.preset === name));
+    });
+  }
+  document.querySelectorAll('[data-preset]').forEach(button => {
+    button.addEventListener('click', () => setPreset(button.dataset.preset));
+  });
+  [firmness, damping, calm].forEach(input => input.addEventListener('input', () => {
+    document.querySelectorAll('[data-preset]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+  }));
+  setPreset('jelly');
 
   function resize() {
     const box = stage.getBoundingClientRect();
@@ -118,9 +135,7 @@ function start() {
   function reset() {
     release();
     physics.reset();
-    firmness.value = '0.45';
-    damping.value = '0.35';
-    calm.checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setPreset('jelly');
     setFlavor('milk');
     feeling.textContent = '今天也要软乎乎';
   }
@@ -155,7 +170,7 @@ function start() {
     const hit = raycaster.intersectObject(cat.body)[0];
     if (!hit) return;
     autoRemaining = 0;
-    pointer = { id: event.pointerId };
+    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0, point: hit.point.clone() };
     canvas.setPointerCapture(event.pointerId);
     canvas.focus({
       preventScroll: true
@@ -179,13 +194,18 @@ function start() {
   });
   canvas.addEventListener('pointermove', event => {
     if (!pointer || pointer.id !== event.pointerId) return;
+    pointer.distance = Math.max(pointer.distance, Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y));
     const box = canvas.getBoundingClientRect();
     ndc.set((event.clientX - box.left) / box.width * 2 - 1, -(event.clientY - box.top) / box.height * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     if (raycaster.ray.intersectPlane(dragPlane, dragPosition)) physics.moveGrab(dragPosition);
   });
   const endPointer = event => {
-    if (pointer?.id === event.pointerId) release();
+    if (pointer?.id !== event.pointerId) return;
+    const tapped = event.type === 'pointerup' && pointer.distance < 6;
+    const point = pointer.point;
+    release();
+    if (tapped) physics.tap(point);
   };
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
@@ -238,6 +258,7 @@ function start() {
         pointer: !!pointer,
         flavor,
         presses,
+        settings: { firmness: Number(firmness.value), damping: Number(damping.value), calm: calm.checked },
         frames: frameCount,
         meanFrameMs: activeMs / Math.max(1, frameCount),
         renderer: {

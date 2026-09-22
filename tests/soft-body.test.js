@@ -70,13 +70,71 @@ test('fixed steps are partition-independent, invalid clocks are ignored, and res
   assert.equal(a.read().settled, true);
 });
 
-test('default button press retains release inertia and settles within three simulated seconds', () => {
+test('default button press retains release inertia and recovers within six simulated seconds', () => {
   const body = new SoftBody();
   body.grab({ x: 0, y: 1.72, z: 0 }, { x: 0, y: 1.24, z: 0 });
   run(body, 29, .45, .35);
   body.release();
   assert.ok(body.read().speed > .05);
-  const result = run(body, 180, .45, .35);
+  const result = run(body, 360, .45, .35);
   assert.ok(result.speed < .03);
   assert.ok(Math.abs(result.volumeRatio - 1) < .01);
+});
+
+
+test('jelly preset produces multiple measurable rebound overshoots', () => {
+  const body = new SoftBody();
+  const binding = body.bindPoints(new Float32Array([0, 1.72, 0]));
+  const output = new Float32Array(3);
+  run(body, 300, .35, .18);
+  body.deform(binding, output);
+  const restingHeight = output[1];
+  body.grab({ x: 0, y: 1.72, z: 0 }, { x: 0, y: 1.24, z: 0 });
+  run(body, 35, .35, .18);
+  body.release();
+  const heights = [];
+  for (let frame = 0; frame < 150; frame++) {
+    body.step(1 / 60, .35, .18);
+    body.deform(binding, output);
+    heights.push(output[1] - restingHeight);
+  }
+  const peaks = heights.filter((value, i) => i > 0 && i < heights.length - 1 && value > heights[i - 1] && value > heights[i + 1] && value > .015);
+  assert.ok(peaks.length >= 2, 'release must ring across at least two visible positive peaks');
+  assert.ok(peaks[0] > .1, 'first rebound must overshoot visibly, not only return to rest');
+  assert.ok(peaks[1] < peaks[0], 'ringing loses energy');
+});
+
+test('internal damping removes strain energy while preserving airborne translation', () => {
+  const results = [];
+  for (const damping of [0, 1]) {
+    const body = new SoftBody();
+    for (let i = 1; i < body.positions.length; i += 3) body.positions[i] += 5;
+    body.nudge();
+    run(body, 12, .35, damping);
+    const mean = [0, 0, 0];
+    const count = body.positions.length / 3;
+    for (let i = 0; i < body.velocities.length; i++) mean[i % 3] += body.velocities[i] / count;
+    let energy = 0;
+    for (let i = 0; i < body.velocities.length; i++) energy += (body.velocities[i] - mean[i % 3]) ** 2;
+    results.push({ mean, energy });
+  }
+  for (let axis = 0; axis < 3; axis++) assert.ok(Math.abs(results[0].mean[axis] - results[1].mean[axis]) < 1e-8);
+  assert.ok(results[1].energy < results[0].energy - .01);
+});
+
+test('tap is local and rest jitter remains bounded after its ringing decays', () => {
+  const body = new SoftBody();
+  run(body, 180, .45, .35);
+  body.tap({ x: 0, y: 2, z: 0 });
+  assert.ok(body.read().speed > .1);
+  assert.ok(Math.abs(body.velocities[0]) < .02, 'a distant floor corner receives negligible impulse');
+  run(body, 600, .45, .35);
+  let maxSpeed = 0;
+  for (let i = 0; i < 120; i++) {
+    const state = body.step(1 / 60, .45, .35);
+    maxSpeed = Math.max(maxSpeed, state.speed);
+    assert.ok(state.minY >= 0 && state.minTetRatio > .9);
+    assert.ok(Math.abs(state.volumeRatio - 1) < .01);
+  }
+  assert.ok(maxSpeed < .01, 'rest must not retain visible self-excited jitter');
 });
