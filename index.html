@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#f3eee5" />
+  <meta name="description" content="月鹿的猫咪奶冻。按一按，拉一拉，慢下来。An open-source squishy cat toy." />
+  <title>猫咪奶冻 · Milk Meow</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='.9em' font-size='54'%3E🐱%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header><a class="brand" href="./">月鹿 · 小小玩具室</a><span class="edition">NO. 01 / 猫咪奶冻</span><a class="source" href="https://github.com/lunaark/milk-meow" target="_blank" rel="noopener">源代码 ↗</a></header>
+  <main>
+    <section class="intro"><span class="eyebrow">给自己，一小口松弛</span><h1>揉掉一点<br><em>不开心。</em></h1><p>奶白色的小猫，软乎乎的今天。<br>按一按，拉一拉，松手就弹回来。</p><span class="signature">Milk Meow — by 月鹿</span></section>
+    <section id="stage" aria-label="猫咪奶冻互动区域"><canvas id="toy" tabindex="0" aria-label="猫咪奶冻：拖动揉捏，空格按压，R 复原"></canvas><div id="error" role="alert" hidden></div><div class="stage-note"><span class="live-dot"></span><span id="feeling" aria-live="polite">今天也要软乎乎</span></div></section>
+    <aside class="controls" aria-label="玩法与设置"><div class="card-heading"><span>调一份喜欢的手感</span><span>01 / 03</span></div><div class="flavors" role="group" aria-label="口味"><button data-flavor="milk" aria-pressed="true"><i></i>牛奶</button><button data-flavor="berry" aria-pressed="false"><i></i>草莓</button><button data-flavor="matcha" aria-pressed="false"><i></i>抹茶</button></div><label for="firmness">弹性 <span>柔软 ↔ Q 弹</span></label><input id="firmness" type="range" min="0" max="1" step="0.01" value="0.45" /><label for="damping">回弹 <span>晃悠悠 ↔ 慢慢停</span></label><input id="damping" type="range" min="0" max="1" step="0.01" value="0.35" /><button id="press" class="primary">按一下，烦恼少一点 ↓</button><div class="secondary"><button id="sway">轻轻晃一晃</button><button id="reset">复原 ↺</button></div><label class="quiet"><input id="calm" type="checkbox" /> 少一点晃动</label><p class="help">直接拖动小猫也可以。<br>键盘：空格按压 · R 复原</p></aside>
+  </main>
+  <footer><span>不赶时间，陪它待一会儿。</span><span>一只可以捏的猫 / 一个小小的休息</span></footer>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
