@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { deformPoint } from './motion.js';
 
 // Original parametric shape. No imported meshes, textures, or simulation code.
 export function createCat() {
@@ -9,9 +8,9 @@ export function createCat() {
   const caramel = new THREE.Color('#d1a266');
   const bodyMaterial = new THREE.MeshPhysicalMaterial({
     vertexColors: true,
-    roughness: .35,
+    roughness: .44,
     metalness: 0,
-    clearcoat: .22,
+    clearcoat: .12,
     clearcoatRoughness: .5
   });
   const geometry = new THREE.SphereGeometry(1, 96, 64);
@@ -20,15 +19,16 @@ export function createCat() {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const a = Math.atan2(y, x), radial = Math.hypot(x, y);
-    const ears = (Math.exp(-(((a - .87) / .24) ** 2)) + Math.exp(-(((a - 2.27) / .24) ** 2))) * .44 * radial ** 8;
-    pos.setXYZ(i, x * 1.32 * (1 + .07 * (1 - y)), .045 + (y + 1) * .94 + ears, z * .86);
+    const ears = (Math.exp(-(((a - .87) / .25) ** 2)) + Math.exp(-(((a - 2.27) / .25) ** 2))) * .30 * radial ** 8;
+    const rounded = v => Math.sign(v) * Math.abs(v) ** .78;
+    pos.setXYZ(i, rounded(x) * 1.25, .025 + (rounded(y) + 1) * .84 + ears, rounded(z) * .86);
   }
 
   function recolor(base = milk, patch = caramel) {
     for (let i = 0; i < pos.count; i++) {
       const p = body.userData.rest;
       const x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
-      const blend = THREE.MathUtils.smoothstep(y, 1.73, 2.18) * THREE.MathUtils.smoothstep(x, .2, .68) * (1 - .12 * Math.abs(z));
+      const blend = THREE.MathUtils.smoothstep(y, 1.47, 1.87) * THREE.MathUtils.smoothstep(x, .2, .68) * (1 - .12 * Math.abs(z));
       const c = base.clone().lerp(patch, blend);
       c.toArray(colors, i * 3);
     }
@@ -66,22 +66,22 @@ export function createCat() {
   });
   for (const side of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 20), chocolate);
-    eye.position.set(side * .44, 1.03, .79);
+    eye.position.set(side * .44, .85, .835);
     eye.scale.set(.095, .128, .046);
     add(eye);
     const glint = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), white);
-    glint.position.set(side * .44 - .023, 1.075, .832);
+    glint.position.set(side * .44 - .023, .895, .877);
     glint.scale.set(.025, .035, .012);
     add(glint);
     const cheek = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), blush);
-    cheek.position.set(side * .68, .83, .725);
+    cheek.position.set(side * .68, .68, .779);
     cheek.scale.set(.12, .041, .018);
     add(cheek);
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, .82, .87),
-      new THREE.Vector3(side * .065, .77, .868),
-      new THREE.Vector3(side * .135, .78, .86),
-      new THREE.Vector3(side * .18, .825, .849)
+      new THREE.Vector3(0, .67, .867),
+      new THREE.Vector3(side * .055, .635, .864),
+      new THREE.Vector3(side * .11, .64, .86),
+      new THREE.Vector3(side * .15, .675, .855)
     ]);
     add(new THREE.Mesh(new THREE.TubeGeometry(curve, 16, .012, 8, false), chocolate));
   }
@@ -90,7 +90,6 @@ export function createCat() {
     berry: ['#f9dce0', '#c58d87'],
     matcha: ['#e3e7c9', '#a1ae76']
   };
-  const scratch = {};
   return {
     group,
     body,
@@ -98,22 +97,11 @@ export function createCat() {
       const p = palettes[name] || palettes.milk;
       recolor(new THREE.Color(p[0]), new THREE.Color(p[1]));
     },
-    update(state, contact) {
+    update(physics) {
       for (const mesh of surfaces) {
         const arr = mesh.geometry.attributes.position;
-        const rest = mesh.userData.rest;
-        for (let i = 0; i < arr.count; i++) {
-          let x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
-          if (contact && state.press > 0) {
-            const d = (x - contact.x) ** 2 + (y - contact.y) ** 2 + (z - contact.z) ** 2;
-            const dent = Math.exp(-d / .32) * state.press * .48;
-            x -= contact.nx * dent;
-            y = Math.max(.015, y - contact.ny * dent);
-            z -= contact.nz * dent;
-          }
-          deformPoint(x, y, z, state, scratch);
-          arr.setXYZ(i, scratch.x, scratch.y, scratch.z);
-        }
+        mesh.userData.binding ??= physics.bindPoints(mesh.userData.rest);
+        physics.deform(mesh.userData.binding, arr.array);
         arr.needsUpdate = true;
         mesh.geometry.computeVertexNormals();
         mesh.geometry.computeBoundingSphere();

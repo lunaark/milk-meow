@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ToyMotion } from './motion.js';
+import { SoftBody } from './soft-body.js';
 import { createCat } from './cat.js';
 import './style.css';
 
@@ -10,7 +10,7 @@ const feeling = document.querySelector('#feeling');
 const firmness = document.querySelector('#firmness');
 const damping = document.querySelector('#damping');
 const calm = document.querySelector('#calm');
-const motion = new ToyMotion();
+const physics = new SoftBody();
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({
@@ -31,7 +31,7 @@ function start() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = .96;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(34, 1, .1, 60);
   camera.position.set(0, 3.05, 7.8);
@@ -84,7 +84,7 @@ function start() {
   contactShadow.rotation.x = -Math.PI / 2;
   contactShadow.position.y = .014;
   scene.add(contactShadow);
-  let contact = null, pointer = null, autoRemaining = 0, flavor = 'milk', contextLost = false, idleLabel = false;
+  let pointer = null, autoRemaining = 0, flavor = 'milk', contextLost = false, idleLabel = false;
   let presses = 0, frameCount = 0, activeMs = 0;
   calm.checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -101,33 +101,23 @@ function start() {
   function release() {
     pointer = null;
     autoRemaining = 0;
-    motion.release();
+    physics.release();
     idleLabel = false;
     feeling.textContent = '慢慢弹回来，慢慢放松';
   }
 
   function press() {
     if (contextLost) return;
-    autoRemaining = .36;
-    contact = {
-      x: 0,
-      y: 2,
-      z: 0,
-      nx: 0,
-      ny: 1,
-      nz: 0
-    };
-    motion.setTarget({
-      press: .58
-    });
+    release();
+    autoRemaining = .48;
+    physics.grab({ x: 0, y: 1.72, z: 0 }, { x: 0, y: 1.24, z: 0 });
     presses++;
     feeling.textContent = '把烦恼，轻轻按下去';
   }
 
   function reset() {
     release();
-    motion.reset();
-    contact = null;
+    physics.reset();
     firmness.value = '0.45';
     damping.value = '0.35';
     calm.checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -149,17 +139,14 @@ function start() {
   document.querySelector('#press').addEventListener('click', press);
   document.querySelector('#sway').addEventListener('click', () => {
     release();
-    autoRemaining = .22;
-    motion.setTarget({
-      press: .08,
-      pullX: .65,
-      pullY: .25
-    });
+    physics.nudge();
     feeling.textContent = '晃一晃，什么都不着急';
   });
   document.querySelector('#reset').addEventListener('click', reset);
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const dragPosition = new THREE.Vector3();
   canvas.addEventListener('pointerdown', event => {
     if (pointer || event.button !== 0 || contextLost) return;
     const box = canvas.getBoundingClientRect();
@@ -168,11 +155,7 @@ function start() {
     const hit = raycaster.intersectObject(cat.body)[0];
     if (!hit) return;
     autoRemaining = 0;
-    pointer = {
-      id: event.pointerId,
-      x: event.clientX,
-      y: event.clientY
-    };
+    pointer = { id: event.pointerId };
     canvas.setPointerCapture(event.pointerId);
     canvas.focus({
       preventScroll: true
@@ -187,30 +170,19 @@ function start() {
       .addScaledVector(rest[1], weights.y)
       .addScaledVector(rest[2], weights.z);
     const n = new THREE.Triangle(...rest).getNormal(new THREE.Vector3());
-    contact = {
-      x: anchor.x,
-      y: anchor.y,
-      z: anchor.z,
-      nx: n.x,
-      ny: n.y,
-      nz: n.z
-    };
-    motion.setTarget({
-      press: .32
-    });
+    const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
+    const initialTarget = hit.point.clone().addScaledVector(n, -.14);
+    dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, initialTarget);
+    physics.grab(anchor, initialTarget);
     presses++;
     feeling.textContent = '捏住啦，试着轻轻拉一拉';
   });
   canvas.addEventListener('pointermove', event => {
     if (!pointer || pointer.id !== event.pointerId) return;
     const box = canvas.getBoundingClientRect();
-    const dx = (event.clientX - pointer.x) / box.width;
-    const dy = (event.clientY - pointer.y) / box.height;
-    motion.setTarget({
-      press: THREE.MathUtils.clamp(.32 + dy * 2, -.18, .7),
-      pullX: dx * 3,
-      pullY: dy * .5
-    });
+    ndc.set((event.clientX - box.left) / box.width * 2 - 1, -(event.clientY - box.top) / box.height * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    if (raycaster.ray.intersectPlane(dragPlane, dragPosition)) physics.moveGrab(dragPosition);
   });
   const endPointer = event => {
     if (pointer?.id === event.pointerId) release();
@@ -244,9 +216,11 @@ function start() {
       autoRemaining -= dt;
       if (autoRemaining <= 0) release();
     }
-    const state = motion.step(dt, Number(firmness.value), calm.checked ? 1 : Number(damping.value));
-    cat.update(state, contact);
-    contactShadow.scale.set(1 + state.press * .2, 1 + state.press * .1, 1);
+    physics.step(dt, Number(firmness.value), calm.checked ? 1 : Number(damping.value));
+    const state = physics.read();
+    cat.update(physics);
+    contactShadow.position.x = state.center.x;
+    contactShadow.position.z = state.center.z;
     if (state.settled && !pointer && autoRemaining <= 0) {
       if (!idleLabel) {
         feeling.textContent = '今天也要软乎乎';
@@ -260,7 +234,7 @@ function start() {
   if (new URLSearchParams(location.search).has('inspect')) {
     window.__MILK_MEOW__ = {
       read: () => ({
-        state: motion.state,
+        state: physics.read(),
         pointer: !!pointer,
         flavor,
         presses,
